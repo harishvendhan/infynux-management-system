@@ -4,7 +4,7 @@
   "private": true,
   "description": "Infynux Business OS - Enterprise Operations Platform",
   "scripts": {
-    "install:all": "npm install --prefix server && npm install --prefix client",
+    "install:all": "npm install --include=dev --prefix server && npm install --include=dev --prefix client",
     "build:client": "npm run --prefix client build",
     "build:server": "npm run --prefix server build",
     "prisma:generate": "npm run --prefix server prisma:generate",
