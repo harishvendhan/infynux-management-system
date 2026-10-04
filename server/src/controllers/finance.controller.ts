@@ -176,6 +176,38 @@ export async function updateEmployee(req: Request, res: Response): Promise<void>
   }
 }
 
+export async function deleteEmployee(req: Request, res: Response): Promise<void> {
+  try {
+    const id = req.params.id as string;
+
+    const salaryCount = await prisma.salary.count({ where: { employeeId: id } });
+    if (salaryCount > 0) {
+      res.status(400).json({
+        error: {
+          message: 'Cannot delete employee with existing salary records. Please deactivate them instead.',
+          code: 'CONFLICT',
+        },
+      });
+      return;
+    }
+
+    await prisma.project.updateMany({
+      where: { assignedEmployeeId: id },
+      data: { assignedEmployeeId: null },
+    });
+
+    await prisma.expense.updateMany({
+      where: { employeeId: id },
+      data: { employeeId: null },
+    });
+
+    await prisma.employee.delete({ where: { id } });
+    res.status(200).json({ data: { message: 'Employee deleted successfully.' }, error: null });
+  } catch (error: any) {
+    res.status(500).json({ error: { message: error.message, code: 'SERVER_ERROR' } });
+  }
+}
+
 // --- SALARIES ---
 export async function getSalaries(req: Request, res: Response): Promise<void> {
   try {

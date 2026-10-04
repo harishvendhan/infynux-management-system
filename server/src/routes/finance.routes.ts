@@ -7,6 +7,7 @@ import {
   getEmployees,
   createEmployee,
   updateEmployee,
+  deleteEmployee,
   getSalaries,
   createSalary,
   updateSalary,
@@ -29,6 +30,7 @@ router.delete('/expenses/:id', deleteExpense);
 router.get('/employees', getEmployees);
 router.post('/employees', createEmployee);
 router.patch('/employees/:id', updateEmployee);
+router.delete('/employees/:id', deleteEmployee);
 
 // Salaries
 router.get('/salaries', getSalaries);

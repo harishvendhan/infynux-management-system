@@ -18,6 +18,11 @@ import {
   AlertCircle,
   Calendar,
   Check,
+  UserPlus,
+  Users,
+  Phone,
+  Mail,
+  UserCheck,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 
@@ -35,7 +40,7 @@ const EXPENSE_CATEGORIES = [
 
 export const FinancePage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const currentTab = (searchParams.get('tab') as 'income' | 'expenses' | 'salaries') || 'expenses';
+  const currentTab = (searchParams.get('tab') as 'income' | 'expenses' | 'salaries' | 'employees') || 'expenses';
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -48,6 +53,7 @@ export const FinancePage: React.FC = () => {
   const [expenseCategoryFilter, setExpenseCategoryFilter] = useState('ALL');
   const [salaryMonthFilter, setSalaryMonthFilter] = useState('ALL');
   const [salarySearch, setSalarySearch] = useState('');
+  const [employeeSearch, setEmployeeSearch] = useState('');
 
   // New Expense Modal State
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState<boolean>(false);
@@ -78,6 +84,25 @@ export const FinancePage: React.FC = () => {
   const [salPaidOn, setSalPaidOn] = useState(new Date().toISOString().split('T')[0]);
   const [salNotes, setSalNotes] = useState('');
 
+  // Inline Quick Add Employee State (Inside Process Salary Modal)
+  const [isQuickAddingEmployee, setIsQuickAddingEmployee] = useState<boolean>(false);
+  const [quickEmpName, setQuickEmpName] = useState('');
+  const [quickEmpRoleTitle, setQuickEmpRoleTitle] = useState('');
+  const [quickEmpBaseSalary, setQuickEmpBaseSalary] = useState<number | string>('');
+  const [quickEmpPhone, setQuickEmpPhone] = useState('');
+  const [quickEmpEmail, setQuickEmpEmail] = useState('');
+
+  // Add / Edit Employee Modal State
+  const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState<boolean>(false);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [empName, setEmpName] = useState('');
+  const [empRoleTitle, setEmpRoleTitle] = useState('');
+  const [empBaseSalary, setEmpBaseSalary] = useState<number | string>('');
+  const [empPhone, setEmpPhone] = useState('');
+  const [empEmail, setEmpEmail] = useState('');
+  const [empIsActive, setEmpIsActive] = useState(true);
+  const [empAutoOpenSalary, setEmpAutoOpenSalary] = useState(true);
+
   // Edit Salary Modal State
   const [editingSalary, setEditingSalary] = useState<Salary | null>(null);
   const [editSalMonth, setEditSalMonth] = useState('');
@@ -90,7 +115,7 @@ export const FinancePage: React.FC = () => {
 
   // Delete Confirmation Modal State
   const [itemToDelete, setItemToDelete] = useState<{
-    type: 'expense' | 'salary';
+    type: 'expense' | 'salary' | 'employee';
     id: string;
     title: string;
   } | null>(null);
@@ -249,13 +274,135 @@ export const FinancePage: React.FC = () => {
     loadData();
   };
 
+  const openAddEmployeeModal = (autoOpenSalary = false) => {
+    setEditingEmployee(null);
+    setEmpName('');
+    setEmpRoleTitle('');
+    setEmpBaseSalary('');
+    setEmpPhone('');
+    setEmpEmail('');
+    setEmpIsActive(true);
+    setEmpAutoOpenSalary(autoOpenSalary);
+    setIsEmployeeModalOpen(true);
+  };
+
+  const openEditEmployeeModal = (emp: Employee) => {
+    setEditingEmployee(emp);
+    setEmpName(emp.name);
+    setEmpRoleTitle(emp.roleTitle);
+    setEmpBaseSalary(emp.baseSalary);
+    setEmpPhone(emp.phone || '');
+    setEmpEmail(emp.email || '');
+    setEmpIsActive(emp.isActive !== false);
+    setIsEmployeeModalOpen(true);
+  };
+
+  const handleSaveEmployee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!empName.trim() || !empRoleTitle.trim() || empBaseSalary === '') return;
+
+    if (editingEmployee) {
+      await api.updateEmployee(editingEmployee.id, {
+        name: empName.trim(),
+        roleTitle: empRoleTitle.trim(),
+        baseSalary: Number(empBaseSalary),
+        phone: empPhone.trim() || null,
+        email: empEmail.trim() || null,
+        isActive: empIsActive,
+      });
+      setIsEmployeeModalOpen(false);
+      setEditingEmployee(null);
+      await loadData();
+    } else {
+      const newEmp = await api.createEmployee({
+        name: empName.trim(),
+        roleTitle: empRoleTitle.trim(),
+        baseSalary: Number(empBaseSalary),
+        phone: empPhone.trim() || null,
+        email: empEmail.trim() || null,
+        isActive: empIsActive,
+      });
+
+      setIsEmployeeModalOpen(false);
+      await loadData();
+
+      if (empAutoOpenSalary) {
+        setSalEmployeeId(newEmp.id);
+        setSalBaseSalary(newEmp.baseSalary);
+        setSalBonus(0);
+        setSalDeductions(0);
+        setSalStatus('PENDING');
+        setIsSalaryModalOpen(true);
+      }
+    }
+  };
+
+  const handleQuickAddEmployeeSubmit = async () => {
+    if (!quickEmpName.trim() || !quickEmpRoleTitle.trim() || quickEmpBaseSalary === '') {
+      alert('Please fill in Employee Name, Role / Title, and Base Salary.');
+      return;
+    }
+
+    try {
+      const newEmp = await api.createEmployee({
+        name: quickEmpName.trim(),
+        roleTitle: quickEmpRoleTitle.trim(),
+        baseSalary: Number(quickEmpBaseSalary),
+        phone: quickEmpPhone.trim() || null,
+        email: quickEmpEmail.trim() || null,
+        isActive: true,
+      });
+
+      setEmployees((prev) => {
+        const exists = prev.find((e) => e.id === newEmp.id);
+        if (exists) return prev;
+        return [...prev, newEmp];
+      });
+
+      setSalEmployeeId(newEmp.id);
+      setSalBaseSalary(newEmp.baseSalary);
+
+      setQuickEmpName('');
+      setQuickEmpRoleTitle('');
+      setQuickEmpBaseSalary('');
+      setQuickEmpPhone('');
+      setQuickEmpEmail('');
+      setIsQuickAddingEmployee(false);
+    } catch (err: any) {
+      alert(err.message || 'Failed to add employee');
+    }
+  };
+
+  const handleProcessSalaryForEmployee = (emp: Employee) => {
+    setSalEmployeeId(emp.id);
+    setSalBaseSalary(emp.baseSalary);
+    setSalBonus(0);
+    setSalDeductions(0);
+    setSalStatus('PENDING');
+    setIsSalaryModalOpen(true);
+  };
+
+  const confirmDeleteEmployee = (emp: Employee) => {
+    setItemToDelete({
+      type: 'employee',
+      id: emp.id,
+      title: `${emp.name} (${emp.roleTitle})`,
+    });
+  };
+
   const handleExecuteDelete = async () => {
     if (!itemToDelete) return;
 
     if (itemToDelete.type === 'expense') {
       await api.deleteExpense(itemToDelete.id);
-    } else {
+    } else if (itemToDelete.type === 'salary') {
       await api.deleteSalary(itemToDelete.id);
+    } else if (itemToDelete.type === 'employee') {
+      try {
+        await api.deleteEmployee(itemToDelete.id);
+      } catch (err: any) {
+        alert(err.message || 'Cannot delete employee');
+      }
     }
 
     setItemToDelete(null);
@@ -309,6 +456,23 @@ export const FinancePage: React.FC = () => {
     return Array.from(set).sort().reverse();
   }, [salaries]);
 
+  const filteredEmployees = useMemo(() => {
+    return employees.filter((emp) => {
+      if (!employeeSearch.trim()) return true;
+      const q = employeeSearch.toLowerCase();
+      return (
+        emp.name.toLowerCase().includes(q) ||
+        emp.roleTitle.toLowerCase().includes(q) ||
+        (emp.email && emp.email.toLowerCase().includes(q)) ||
+        (emp.phone && emp.phone.toLowerCase().includes(q))
+      );
+    });
+  }, [employees, employeeSearch]);
+
+  const totalBasePayroll = useMemo(() => {
+    return employees.filter((e) => e.isActive !== false).reduce((sum, e) => sum + Number(e.baseSalary || 0), 0);
+  }, [employees]);
+
   const createModalFinalAmount = Math.max(
     0,
     Number(salBaseSalary || 0) + Number(salBonus || 0) - Number(salDeductions || 0)
@@ -352,6 +516,17 @@ export const FinancePage: React.FC = () => {
             </button>
 
             <button
+              onClick={() => setSearchParams({ tab: 'employees' })}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                currentTab === 'employees'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Employees <span className="text-[11px] opacity-70">({employees.length})</span>
+            </button>
+
+            <button
               onClick={() => setSearchParams({ tab: 'income' })}
               className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
                 currentTab === 'income'
@@ -376,19 +551,53 @@ export const FinancePage: React.FC = () => {
           )}
 
           {currentTab === 'salaries' && (
-            <button
-              onClick={() => {
-                if (employees.length > 0 && !salEmployeeId) {
-                  setSalEmployeeId(employees[0].id);
-                  setSalBaseSalary(employees[0].baseSalary);
-                }
-                setIsSalaryModalOpen(true);
-              }}
-              className="interactive-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Process Salary</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => openAddEmployeeModal(true)}
+                className="interactive-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-xs transition-all"
+              >
+                <UserPlus className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <span>+ Add Employee</span>
+              </button>
+              <button
+                onClick={() => {
+                  if (employees.length > 0 && !salEmployeeId) {
+                    setSalEmployeeId(employees[0].id);
+                    setSalBaseSalary(employees[0].baseSalary);
+                  }
+                  setIsSalaryModalOpen(true);
+                }}
+                className="interactive-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Process Salary</span>
+              </button>
+            </div>
+          )}
+
+          {currentTab === 'employees' && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => openAddEmployeeModal(false)}
+                className="interactive-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>+ Add Employee</span>
+              </button>
+              <button
+                onClick={() => {
+                  if (employees.length > 0 && !salEmployeeId) {
+                    setSalEmployeeId(employees[0].id);
+                    setSalBaseSalary(employees[0].baseSalary);
+                  }
+                  setIsSalaryModalOpen(true);
+                }}
+                className="interactive-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-xs transition-all"
+              >
+                <Receipt className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <span>Process Salary</span>
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -687,6 +896,188 @@ export const FinancePage: React.FC = () => {
         </div>
       )}
 
+      {/* --- EMPLOYEES TAB --- */}
+      {currentTab === 'employees' && (
+        <div className="space-y-4">
+          {/* Summary Stats Row */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="p-3.5 rounded-2xl glass-panel flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Staff</p>
+                <p className="text-xl font-black text-slate-900 dark:text-white mt-0.5">{employees.length}</p>
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                <Users className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl glass-panel flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Active Employees</p>
+                <p className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
+                  {employees.filter((e) => e.isActive !== false).length}
+                </p>
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                <UserCheck className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl glass-panel flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Monthly Base Payroll</p>
+                <p className="text-xl font-black text-slate-900 dark:text-white mt-0.5">{formatINR(totalBasePayroll)}</p>
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                <Award className="w-5 h-5" />
+              </div>
+            </div>
+          </div>
+
+          {/* Search + Action Bar */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search employee by name, designation, email..."
+                value={employeeSearch}
+                onChange={(e) => setEmployeeSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-600 transition-colors"
+              />
+            </div>
+
+            <div className="text-xs text-slate-500 font-medium">
+              <span>{filteredEmployees.length} registered employees</span>
+            </div>
+          </div>
+
+          {/* Employees Table */}
+          <div className="rounded-2xl glass-panel overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[700px] text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-900/80 text-slate-500 uppercase font-semibold border-b border-slate-200 dark:border-slate-800">
+                  <tr>
+                    <th className="py-3 px-4">Employee Details</th>
+                    <th className="py-3 px-4">Designation / Role</th>
+                    <th className="py-3 px-4">Base Salary</th>
+                    <th className="py-3 px-4">Contact Info</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                  {filteredEmployees.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-slate-400">
+                        <Users className="w-8 h-8 mx-auto mb-2 opacity-40 text-indigo-500" />
+                        <p className="font-semibold text-slate-700 dark:text-slate-300">No employees found</p>
+                        <p className="text-xs text-slate-400 mt-0.5">Click "+ Add Employee" to register team members for salary disbursements.</p>
+                        <button
+                          onClick={() => openAddEmployeeModal(true)}
+                          className="mt-3 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-lg inline-flex items-center gap-1.5 shadow-xs"
+                        >
+                          <UserPlus className="w-3.5 h-3.5" />
+                          <span>+ Add First Employee</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredEmployees.map((emp) => (
+                      <tr key={emp.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-100 dark:bg-indigo-600/10 dark:text-indigo-400 dark:border-indigo-500/20 flex items-center justify-center font-bold text-xs shrink-0">
+                              {emp.name.charAt(0)}
+                            </div>
+                            <div>
+                              <p className="font-bold text-slate-900 dark:text-white">{emp.name}</p>
+                              <p className="text-[11px] text-slate-400 font-mono">ID: {emp.id.slice(0, 8)}</p>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                            {emp.roleTitle}
+                          </span>
+                        </td>
+
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          <span className="font-extrabold text-slate-900 dark:text-white text-sm bg-slate-50 dark:bg-slate-800/60 px-2 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700/60">
+                            {formatINR(emp.baseSalary)}
+                          </span>
+                          <span className="text-[10px] text-slate-400 ml-1">/ mo</span>
+                        </td>
+
+                        <td className="py-3.5 px-4 whitespace-nowrap text-slate-600 dark:text-slate-300">
+                          <div className="space-y-0.5">
+                            {emp.email && (
+                              <div className="flex items-center gap-1 text-[11px]">
+                                <Mail className="w-3 h-3 text-slate-400" />
+                                <span>{emp.email}</span>
+                              </div>
+                            )}
+                            {emp.phone && (
+                              <div className="flex items-center gap-1 text-[11px]">
+                                <Phone className="w-3 h-3 text-slate-400" />
+                                <span>{emp.phone}</span>
+                              </div>
+                            )}
+                            {!emp.email && !emp.phone && <span className="text-slate-400 text-[11px]">—</span>}
+                          </div>
+                        </td>
+
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          {emp.isActive !== false ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              Active
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                              Inactive
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => handleProcessSalaryForEmployee(emp)}
+                              title="Process monthly salary for this employee"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition-all"
+                            >
+                              <Receipt className="w-3.5 h-3.5" />
+                              <span>Disburse Salary</span>
+                            </button>
+                            <button
+                              onClick={() => openEditEmployeeModal(emp)}
+                              title="Edit employee"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => confirmDeleteEmployee(emp)}
+                              title="Delete employee"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* --- INCOME TAB --- */}
       {currentTab === 'income' && (
         <div className="space-y-4">
@@ -943,25 +1334,64 @@ export const FinancePage: React.FC = () => {
       {/* 3. Process Salary Modal */}
       <Modal
         isOpen={isSalaryModalOpen}
-        onClose={() => setIsSalaryModalOpen(false)}
+        onClose={() => {
+          setIsSalaryModalOpen(false);
+          setIsQuickAddingEmployee(false);
+        }}
         title="Process Salary Disbursement"
         subtitle="Allocate monthly payroll with base compensation, bonuses, and tax/PF deductions"
       >
         <form onSubmit={handleCreateSalary} className="space-y-4 text-xs">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">Select Employee *</label>
-              <select
-                value={salEmployeeId}
-                onChange={(e) => handleEmployeeSelectChange(e.target.value)}
-                className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-indigo-600"
-              >
-                {employees.map((emp) => (
-                  <option key={emp.id} value={emp.id}>
-                    {emp.name} ({emp.roleTitle})
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block font-medium text-slate-700 dark:text-slate-300">Select Employee *</label>
+                <button
+                  type="button"
+                  onClick={() => setIsQuickAddingEmployee(!isQuickAddingEmployee)}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>{isQuickAddingEmployee ? 'Close Form' : '+ New Employee'}</span>
+                </button>
+              </div>
+
+              {!isQuickAddingEmployee && employees.length === 0 ? (
+                <div className="p-2.5 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-700 bg-indigo-50/50 dark:bg-indigo-950/20 text-center">
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 mb-1.5">No employees registered yet.</p>
+                  <button
+                    type="button"
+                    onClick={() => setIsQuickAddingEmployee(true)}
+                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 shadow-xs"
+                  >
+                    <UserPlus className="w-3 h-3" />
+                    Add Employee First
+                  </button>
+                </div>
+              ) : !isQuickAddingEmployee ? (
+                <select
+                  value={salEmployeeId}
+                  onChange={(e) => {
+                    if (e.target.value === '__add_new__') {
+                      setIsQuickAddingEmployee(true);
+                    } else {
+                      handleEmployeeSelectChange(e.target.value);
+                    }
+                  }}
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-indigo-600"
+                >
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} ({emp.roleTitle}) - Base: {formatINR(emp.baseSalary)}
+                    </option>
+                  ))}
+                  <option value="__add_new__">+ Add New Employee...</option>
+                </select>
+              ) : (
+                <div className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium py-2">
+                  Filling new employee details below ↓
+                </div>
+              )}
             </div>
 
             <div>
@@ -975,6 +1405,105 @@ export const FinancePage: React.FC = () => {
               />
             </div>
           </div>
+
+          {/* Inline Quick Add Employee Subcard */}
+          {isQuickAddingEmployee && (
+            <div className="p-3.5 rounded-xl border border-indigo-200 dark:border-indigo-800/80 bg-indigo-50/50 dark:bg-indigo-950/20 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <div className="p-1 rounded-md bg-indigo-600 text-white">
+                    <UserPlus className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-900 dark:text-white text-xs">Add New Employee for Salary</h4>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">Save employee details to immediately disburse salary</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsQuickAddingEmployee(false)}
+                  className="text-[11px] text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                >
+                  Cancel
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1">Full Name *</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Suresh Kumar"
+                    value={quickEmpName}
+                    onChange={(e) => setQuickEmpName(e.target.value)}
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1">Role / Designation *</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Fullstack Engineer"
+                    value={quickEmpRoleTitle}
+                    onChange={(e) => setQuickEmpRoleTitle(e.target.value)}
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-600"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1">Base Salary (INR) *</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="50000"
+                    value={quickEmpBaseSalary}
+                    onChange={(e) => setQuickEmpBaseSalary(e.target.value)}
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-600 font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1">Email (Optional)</label>
+                  <input
+                    type="email"
+                    placeholder="suresh@infynux.com"
+                    value={quickEmpEmail}
+                    onChange={(e) => setQuickEmpEmail(e.target.value)}
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1">Phone (Optional)</label>
+                  <input
+                    type="tel"
+                    placeholder="+91 98765 43210"
+                    value={quickEmpPhone}
+                    onChange={(e) => setQuickEmpPhone(e.target.value)}
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-600"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-1 border-t border-indigo-100 dark:border-indigo-900/40">
+                <button
+                  type="button"
+                  onClick={() => setIsQuickAddingEmployee(false)}
+                  className="px-2.5 py-1 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleQuickAddEmployeeSubmit}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-lg shadow-xs flex items-center gap-1"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Save & Select for Salary</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-3 gap-3">
             <div>
@@ -1233,14 +1762,21 @@ export const FinancePage: React.FC = () => {
           isOpen={!!itemToDelete}
           onClose={() => setItemToDelete(null)}
           title="Confirm Deletion"
-          subtitle="This action will permanently delete this record from the finance ledger."
+          subtitle={`This action will permanently delete this ${itemToDelete.type} from the database.`}
         >
           <div className="space-y-4 text-xs">
             <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-500/30 flex items-start gap-2.5">
               <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
               <div>
-                <p className="font-semibold text-slate-900 dark:text-white">Are you sure you want to delete this record?</p>
+                <p className="font-semibold text-slate-900 dark:text-white">
+                  Are you sure you want to delete this {itemToDelete.type}?
+                </p>
                 <p className="text-slate-600 dark:text-rose-300 mt-1 font-mono">{itemToDelete?.title}</p>
+                {itemToDelete.type === 'employee' && (
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
+                    Note: Employees with existing salary records cannot be deleted and should be deactivated instead.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -1261,6 +1797,150 @@ export const FinancePage: React.FC = () => {
               </button>
             </div>
           </div>
+        </Modal>
+      )}
+
+      {/* 6. Add / Edit Employee Modal */}
+      {isEmployeeModalOpen && (
+        <Modal
+          isOpen={isEmployeeModalOpen}
+          onClose={() => {
+            setIsEmployeeModalOpen(false);
+            setEditingEmployee(null);
+          }}
+          title={editingEmployee ? 'Edit Employee Details' : 'Add New Employee for Salary'}
+          subtitle={
+            editingEmployee
+              ? `Update role, base salary, and information for ${editingEmployee.name}`
+              : 'Add a new team member with their default base salary for payroll disbursements'
+          }
+        >
+          <form onSubmit={handleSaveEmployee} className="space-y-4 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Full Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Alex Johnson"
+                  value={empName}
+                  onChange={(e) => setEmpName(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-indigo-600"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Role / Designation *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Senior Frontend Engineer"
+                  value={empRoleTitle}
+                  onChange={(e) => setEmpRoleTitle(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-indigo-600"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Default Base Salary (INR) *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="0"
+                  step="1"
+                  placeholder="50000"
+                  value={empBaseSalary}
+                  onChange={(e) => setEmpBaseSalary(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-indigo-600 font-semibold"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Pre-fills automatically during monthly salary processing.</p>
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  placeholder="alex@infynux.com"
+                  value={empEmail}
+                  onChange={(e) => setEmpEmail(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-indigo-600"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Phone Number
+                </label>
+                <input
+                  type="tel"
+                  placeholder="+91 98765 43210"
+                  value={empPhone}
+                  onChange={(e) => setEmpPhone(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-indigo-600"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={empIsActive}
+                  onChange={(e) => setEmpIsActive(e.target.checked)}
+                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                />
+                <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Active Staff Member</span>
+              </label>
+
+              {!editingEmployee && (
+                <label className="flex items-center gap-2 cursor-pointer text-indigo-600 dark:text-indigo-400">
+                  <input
+                    type="checkbox"
+                    checked={empAutoOpenSalary}
+                    onChange={(e) => setEmpAutoOpenSalary(e.target.checked)}
+                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                  />
+                  <span className="text-xs font-semibold">Immediately disburse salary after saving</span>
+                </label>
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEmployeeModalOpen(false);
+                  setEditingEmployee(null);
+                }}
+                className="px-3.5 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl shadow-xs transition-all flex items-center gap-1.5"
+              >
+                <Check className="w-4 h-4" />
+                <span>
+                  {editingEmployee
+                    ? 'Save Changes'
+                    : empAutoOpenSalary
+                    ? 'Save & Disburse Salary'
+                    : 'Save Employee'}
+                </span>
+              </button>
+            </div>
+          </form>
         </Modal>
       )}
     </div>

@@ -1062,6 +1062,91 @@ export const api = {
     return getLocal<Employee[]>('employees', INITIAL_EMPLOYEES);
   },
 
+  async createEmployee(data: {
+    name: string;
+    roleTitle: string;
+    phone?: string | null;
+    email?: string | null;
+    baseSalary: number;
+    isActive?: boolean;
+  }): Promise<Employee> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/finance/employees`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const json = await res.json();
+        return json.data;
+      }
+    } catch {}
+
+    const list = getLocal<Employee[]>('employees', INITIAL_EMPLOYEES);
+    const newEmp: Employee = {
+      id: 'emp_' + Date.now(),
+      name: data.name,
+      roleTitle: data.roleTitle,
+      phone: data.phone || null,
+      email: data.email || null,
+      baseSalary: Number(data.baseSalary || 0),
+      isActive: data.isActive !== undefined ? data.isActive : true,
+    };
+    list.push(newEmp);
+    setLocal('employees', list);
+    return newEmp;
+  },
+
+  async updateEmployee(id: string, data: Partial<Employee>): Promise<Employee> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/finance/employees/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const json = await res.json();
+        return json.data;
+      }
+    } catch {}
+
+    const list = getLocal<Employee[]>('employees', INITIAL_EMPLOYEES);
+    const index = list.findIndex((e) => e.id === id);
+    if (index !== -1) {
+      list[index] = {
+        ...list[index],
+        ...data,
+        baseSalary: data.baseSalary !== undefined ? Number(data.baseSalary) : list[index].baseSalary,
+      };
+      setLocal('employees', list);
+      return list[index];
+    }
+    throw new Error('Employee not found');
+  },
+
+  async deleteEmployee(id: string): Promise<void> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/finance/employees/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error?.message || 'Failed to delete employee');
+      }
+    } catch (err: any) {
+      if (err.message && !err.message.includes('fetch')) {
+        throw err;
+      }
+    }
+
+    let list = getLocal<Employee[]>('employees', INITIAL_EMPLOYEES);
+    list = list.filter((e) => e.id !== id);
+    setLocal('employees', list);
+  },
+
   async getSalaries(month?: string): Promise<Salary[]> {
     try {
       const url = month ? `${API_BASE_URL}/finance/salaries?month=${month}` : `${API_BASE_URL}/finance/salaries`;
