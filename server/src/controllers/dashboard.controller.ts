@@ -178,3 +178,31 @@ export async function getRevenueChart(req: Request, res: Response): Promise<void
     res.status(500).json({ error: { message: error.message, code: 'SERVER_ERROR' } });
   }
 }
+
+export async function getDbStatus(req: Request, res: Response): Promise<void> {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    const usersCount = await prisma.user.count();
+    const projectsCount = await prisma.project.count();
+    res.status(200).json({
+      data: {
+        connected: true,
+        provider: 'Supabase PostgreSQL',
+        host: 'aws-0-ap-southeast-1.pooler.supabase.com',
+        usersCount,
+        projectsCount,
+      },
+      error: null,
+    });
+  } catch (error: any) {
+    res.status(200).json({
+      data: {
+        connected: false,
+        provider: 'Supabase PostgreSQL',
+        error: error.message,
+      },
+      error: null,
+    });
+  }
+}
+

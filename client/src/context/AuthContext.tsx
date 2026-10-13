@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
+import { syncLocalDraftsToSupabase } from '../lib/api';
 
 interface AuthContextType {
   user: User | null;
@@ -18,33 +19,69 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('infynux_user');
-    return saved
-      ? JSON.parse(saved)
-      : {
-          id: 'admin-1',
-          name: 'Yogeshwaran',
-          email: 'admin@infynux.com',
-          role: 'ADMIN',
-        };
+    const token = localStorage.getItem('infynux_token');
+    if (saved && token) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return null;
+      }
+    }
+    return null;
   });
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    return Boolean(localStorage.getItem('infynux_token'));
+  });
 
   useEffect(() => {
-    // Attempt to verify session from backend cookie
+    const handleUnauthorized = () => {
+      setUser(null);
+      localStorage.removeItem('infynux_user');
+      localStorage.removeItem('infynux_token');
+    };
+
+    window.addEventListener('infynux_unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('infynux_unauthorized', handleUnauthorized);
+  }, []);
+
+  useEffect(() => {
     async function checkMe() {
+      const token = localStorage.getItem('infynux_token');
+      if (!token) {
+        setIsLoading(false);
+        return;
+      }
+
       try {
-        const res = await fetch(`${AUTH_API_BASE}/me`, { credentials: 'include' });
+        const headers: HeadersInit = {
+          Authorization: `Bearer ${token}`,
+        };
+        const res = await fetch(`${AUTH_API_BASE}/me`, {
+          headers,
+          credentials: 'include',
+        });
+
         if (res.ok) {
           const json = await res.json();
           if (json.data?.user) {
             setUser(json.data.user);
             localStorage.setItem('infynux_user', JSON.stringify(json.data.user));
+            setIsLoading(false);
+            syncLocalDraftsToSupabase();
+            return;
           }
         }
       } catch (e) {
-        // Fall back to stored local state
+        console.error('Session check failed', e);
       }
+
+      // If backend verification failed, session is invalid
+      setUser(null);
+      localStorage.removeItem('infynux_user');
+      localStorage.removeItem('infynux_token');
+      setIsLoading(false);
     }
+
     checkMe();
   }, []);
 
@@ -54,31 +91,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const res = await fetch(`${AUTH_API_BASE}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: email.trim(), password }),
         credentials: 'include',
       });
 
       if (res.ok) {
         const json = await res.json();
-        setUser(json.data.user);
-        localStorage.setItem('infynux_user', JSON.stringify(json.data.user));
-        setIsLoading(false);
-        return true;
+        if (json.data?.user) {
+          setUser(json.data.user);
+          localStorage.setItem('infynux_user', JSON.stringify(json.data.user));
+          if (json.data.token) {
+            localStorage.setItem('infynux_token', json.data.token);
+          }
+          setIsLoading(false);
+          syncLocalDraftsToSupabase();
+          return true;
+        }
       }
-    } catch {}
-
-    // Fallback login validation for seamless offline preview
-    if (email.toLowerCase().includes('admin') || email.toLowerCase().includes('yogeshwaran')) {
-      const fallbackUser: User = {
-        id: 'admin-1',
-        name: 'Yogeshwaran',
-        email: email,
-        role: 'ADMIN',
-      };
-      setUser(fallbackUser);
-      localStorage.setItem('infynux_user', JSON.stringify(fallbackUser));
-      setIsLoading(false);
-      return true;
+    } catch (err) {
+      console.error('Login network error:', err);
     }
 
     setIsLoading(false);
@@ -86,11 +117,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    const token = localStorage.getItem('infynux_token');
     try {
-      await fetch(`${AUTH_API_BASE}/logout`, { method: 'POST', credentials: 'include' });
+      const headers: HeadersInit = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      await fetch(`${AUTH_API_BASE}/logout`, { method: 'POST', headers, credentials: 'include' });
     } catch {}
     setUser(null);
     localStorage.removeItem('infynux_user');
+    localStorage.removeItem('infynux_token');
   };
 
   return (
