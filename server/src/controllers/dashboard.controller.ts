@@ -130,8 +130,27 @@ export async function getDashboardSummary(req: Request, res: Response): Promise<
       error: null,
     });
   } catch (error: any) {
-    console.error('Error in getDashboardSummary:', error);
-    res.status(500).json({ error: { message: error.message, code: 'SERVER_ERROR' } });
+    console.error('Error in getDashboardSummary (falling back to empty default state):', error?.message || error);
+    res.status(200).json({
+      data: {
+        kpis: {
+          revenueThisMonth: 0,
+          revenueGrowthMoM: 0,
+          activeProjectsCount: 0,
+          activeClientsCount: 0,
+          pendingPaymentsCount: 0,
+          pendingAmount: 0,
+          expensesThisMonth: 0,
+          salariesPaidThisMonth: 0,
+          netProfit: 0,
+          profitMarginPercent: 0,
+        },
+        todaysTasks: [],
+        upcomingPayments: [],
+        recentActivity: [],
+      },
+      error: null,
+    });
   }
 }
 
@@ -148,23 +167,30 @@ export async function getRevenueChart(req: Request, res: Response): Promise<void
       const end = new Date(year, month + 1, 0, 23, 59, 59, 999);
       const monthLabel = d.toLocaleString('en-US', { month: 'short' });
 
-      const payments = await prisma.payment.findMany({
-        where: {
-          deletedAt: null,
-          status: { in: ['PAID', 'ADVANCE'] },
-          receivedDate: { gte: start, lte: end },
-        },
-        select: { amount: true },
-      });
-      const rev = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+      let rev = 0;
+      let exp = 0;
 
-      const expenses = await prisma.expense.findMany({
-        where: {
-          date: { gte: start, lte: end },
-        },
-        select: { amount: true },
-      });
-      const exp = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
+      try {
+        const payments = await prisma.payment.findMany({
+          where: {
+            deletedAt: null,
+            status: { in: ['PAID', 'ADVANCE'] },
+            receivedDate: { gte: start, lte: end },
+          },
+          select: { amount: true },
+        });
+        rev = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+
+        const expenses = await prisma.expense.findMany({
+          where: {
+            date: { gte: start, lte: end },
+          },
+          select: { amount: true },
+        });
+        exp = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
+      } catch {
+        // Fall back to zero metrics if DB is offline
+      }
 
       monthsData.push({
         month: monthLabel,
@@ -175,7 +201,7 @@ export async function getRevenueChart(req: Request, res: Response): Promise<void
 
     res.status(200).json({ data: monthsData, error: null });
   } catch (error: any) {
-    res.status(500).json({ error: { message: error.message, code: 'SERVER_ERROR' } });
+    res.status(200).json({ data: [], error: null });
   }
 }
 

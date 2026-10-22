@@ -88,13 +88,33 @@ export const DashboardPage: React.FC = () => {
   useEffect(() => {
     async function load() {
       setIsLoading(true);
-      const [summary, chart] = await Promise.all([
-        api.getDashboardSummary(),
-        api.getRevenueChart(),
-      ]);
-      setData(summary);
-      setChartData(chart);
-      setIsLoading(false);
+      try {
+        const [summary, chart] = await Promise.all([
+          api.getDashboardSummary(),
+          api.getRevenueChart(),
+        ]);
+        setData(summary);
+        setChartData(chart);
+      } catch (err) {
+        console.error('Failed to load dashboard data:', err);
+        // Default safe empty state if server/network fails
+        setData({
+          kpis: {
+            revenueThisMonth: 0,
+            pendingAmount: 0,
+            expensesThisMonth: 0,
+            salariesPaidThisMonth: 0,
+            netProfit: 0,
+            activeClientsCount: 0,
+            activeProjectsCount: 0,
+          },
+          todaysTasks: [],
+          upcomingPayments: [],
+          recentActivity: [],
+        });
+      } finally {
+        setIsLoading(false);
+      }
     }
     load();
   }, []);

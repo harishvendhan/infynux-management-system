@@ -5,6 +5,7 @@ import { config } from '../config/env';
 export interface AuthUser {
   id: string;
   email?: string;
+  name?: string;
   role: string;
 }
 
@@ -30,10 +31,11 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
       return;
     }
 
-    const decoded = jwt.verify(token, config.jwtSecret) as { sub: string; email?: string; role: string };
+    const decoded = jwt.verify(token, config.jwtSecret) as { sub: string; email?: string; role: string; name?: string };
     req.user = {
       id: decoded.sub,
       email: decoded.email,
+      name: decoded.name,
       role: decoded.role,
     };
 

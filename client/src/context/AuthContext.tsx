@@ -67,18 +67,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUser(json.data.user);
             localStorage.setItem('infynux_user', JSON.stringify(json.data.user));
             setIsLoading(false);
-            syncLocalDraftsToSupabase();
+            syncLocalDraftsToSupabase().catch(() => {});
             return;
           }
+        } else if (res.status === 401) {
+          // Token is genuinely rejected or expired
+          setUser(null);
+          localStorage.removeItem('infynux_user');
+          localStorage.removeItem('infynux_token');
+          setIsLoading(false);
+          return;
+        } else {
+          // Server error (e.g. 500) - retain cached user session
+          setIsLoading(false);
+          return;
         }
       } catch (e) {
-        console.error('Session check failed', e);
+        console.error('Session check network error', e);
+        // Offline or connection failed - retain cached user session
+        setIsLoading(false);
+        return;
       }
 
-      // If backend verification failed, session is invalid
-      setUser(null);
-      localStorage.removeItem('infynux_user');
-      localStorage.removeItem('infynux_token');
       setIsLoading(false);
     }
 
