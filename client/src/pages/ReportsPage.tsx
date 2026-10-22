@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../lib/api';
+import { Expense } from '../types';
 import { formatINR, formatDate } from '../lib/formatters';
 import { useTheme } from '../context/ThemeContext';
 import { exportToExcel, ExcelSheetData } from '../lib/excelExport';
-import { BarChart3, Download, TrendingUp, Receipt, Scale, FileSpreadsheet } from 'lucide-react';
+import { BarChart3, Download, TrendingUp, Receipt, Scale, FileSpreadsheet, PieChart as PieChartIcon } from 'lucide-react';
 import {
   ResponsiveContainer,
   BarChart,
@@ -17,27 +18,69 @@ import {
   Cell,
 } from 'recharts';
 
+const CATEGORY_COLORS: Record<string, string> = {
+  'Hosting & Cloud': '#4F46E5',
+  'Software Licenses': '#EC4899',
+  'Office & Utilities': '#10B981',
+  'Office & Internet': '#10B981',
+  'Salaries & Stipends': '#3B82F6',
+  'Equipment': '#F59E0B',
+  'Marketing & Ads': '#8B5CF6',
+  'Travel & Meals': '#06B6D4',
+  'Legal & Professional': '#6366F1',
+  'Other': '#64748B',
+};
+
+const COLOR_PALETTE = ['#4F46E5', '#EC4899', '#10B981', '#3B82F6', '#F59E0B', '#8B5CF6', '#06B6D4', '#E11D48', '#14B8A6'];
+
 export const ReportsPage: React.FC = () => {
   const { isDark } = useTheme();
   const [chartData, setChartData] = useState<any[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isExporting, setIsExporting] = useState<boolean>(false);
 
   useEffect(() => {
     async function load() {
       setIsLoading(true);
-      const data = await api.getRevenueChart();
-      setChartData(data);
-      setIsLoading(false);
+      try {
+        const [chart, expList] = await Promise.all([
+          api.getRevenueChart().catch(() => []),
+          api.getExpenses().catch(() => []),
+        ]);
+        setChartData(chart || []);
+        setExpenses(expList || []);
+      } catch (err) {
+        console.error('Failed to load reports data:', err);
+      } finally {
+        setIsLoading(false);
+      }
     }
     load();
   }, []);
 
-  const categoryExpenses = [
-    { name: 'Hosting & Cloud', value: 4500, color: '#4F46E5' },
-    { name: 'Software Licenses', value: 3200, color: '#EC4899' },
-    { name: 'Office & Internet', value: 1999, color: '#10B981' },
-  ];
+  // Compute live totals dynamically from fetched data
+  const totalRevenue = chartData.reduce((sum, item) => sum + Number(item.revenue || 0), 0);
+  const totalExpenses = chartData.reduce((sum, item) => sum + Number(item.expenses || 0), 0);
+  const netSurplus = totalRevenue - totalExpenses;
+  const expenseRatio = totalRevenue > 0 ? ((totalExpenses / totalRevenue) * 100).toFixed(1) : '0';
+
+  // Compute live category breakdown from actual recorded expenses
+  const categoryTotals: Record<string, number> = {};
+  expenses.forEach((e) => {
+    const cat = e.category || 'Other';
+    categoryTotals[cat] = (categoryTotals[cat] || 0) + Number(e.amount || 0);
+  });
+
+  const categoryExpenses = Object.entries(categoryTotals)
+    .filter(([_, val]) => val > 0)
+    .map(([name, value], idx) => ({
+      name,
+      value,
+      color: CATEGORY_COLORS[name] || COLOR_PALETTE[idx % COLOR_PALETTE.length],
+    }));
+
+  const totalCategoryExpenses = categoryExpenses.reduce((sum, c) => sum + c.value, 0);
 
   const handleExportExcel = async () => {
     setIsExporting(true);
@@ -61,7 +104,7 @@ export const ReportsPage: React.FC = () => {
 
       // Sheet 2: Payments Ledger & Sheet 3: Expenses Detail
       try {
-        const [payments, expenses] = await Promise.all([api.getPayments(), api.getExpenses()]);
+        const [payments, detailedExpenses] = await Promise.all([api.getPayments().catch(() => []), api.getExpenses().catch(() => [])]);
 
         if (payments && payments.length > 0) {
           sheets.push({
@@ -80,10 +123,10 @@ export const ReportsPage: React.FC = () => {
           });
         }
 
-        if (expenses && expenses.length > 0) {
+        if (detailedExpenses && detailedExpenses.length > 0) {
           sheets.push({
             name: 'Expenses Detail',
-            data: expenses.map((exp) => ({
+            data: detailedExpenses.map((exp) => ({
               Date: formatDate(exp.date),
               Category: exp.category,
               Description: exp.description,
@@ -151,22 +194,28 @@ export const ReportsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Top 3 KPI strips */}
+      {/* Top 3 KPI strips - Completely computed from live data */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="p-5 rounded-2xl glass-panel interactive-card space-y-1">
-          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total H2 Revenue</p>
-          <h3 className="text-2xl font-black text-slate-900 dark:text-white">₹8,90,000</h3>
-          <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 font-medium">↑ 22% growth trajectory</p>
+          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total Revenue (12M)</p>
+          <h3 className="text-2xl font-black text-slate-900 dark:text-white">{formatINR(totalRevenue)}</h3>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-medium">
+            {totalRevenue > 0 ? 'Calculated from received payments' : 'No revenue recorded yet'}
+          </p>
         </div>
         <div className="p-5 rounded-2xl glass-panel interactive-card space-y-1">
-          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total H2 Expenses</p>
-          <h3 className="text-2xl font-black text-rose-600 dark:text-rose-400">₹93,799</h3>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">10.5% expense-to-revenue ratio</p>
+          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total Expenses (12M)</p>
+          <h3 className="text-2xl font-black text-rose-600 dark:text-rose-400">{formatINR(totalExpenses)}</h3>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+            {totalRevenue > 0 ? `${expenseRatio}% expense-to-revenue ratio` : (totalExpenses > 0 ? 'Recorded overhead' : 'No expenses recorded yet')}
+          </p>
         </div>
         <div className="p-5 rounded-2xl glass-panel interactive-card space-y-1">
           <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Net Operating Surplus</p>
-          <h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400">₹7,96,201</h3>
-          <p className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80 mt-1">Healthy working capital</p>
+          <h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{formatINR(netSurplus)}</h3>
+          <p className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80 mt-1">
+            {netSurplus > 0 ? 'Healthy working capital' : netSurplus < 0 ? 'Operating deficit' : 'Balanced cashflow'}
+          </p>
         </div>
       </div>
 
@@ -192,61 +241,77 @@ export const ReportsPage: React.FC = () => {
                   }}
                   formatter={(value: any) => [formatINR(value), '']}
                 />
-                <Bar dataKey="revenue" fill="#4F46E5" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="expenses" fill="#F43F5E" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="revenue" fill="#4F46E5" radius={[4, 4, 0, 0]} name="Revenue" />
+                <Bar dataKey="expenses" fill="#F43F5E" radius={[4, 4, 0, 0]} name="Expenses" />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Expense Category Breakdown */}
+        {/* Expense Category Breakdown - Dynamic */}
         <div className="p-5 sm:p-6 rounded-2xl glass-panel space-y-4 flex flex-col justify-between">
           <div>
             <h3 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">Expense Distribution</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Current month breakdown</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Category breakdown</p>
 
-            <div className="h-44 w-full mt-3">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={categoryExpenses}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={45}
-                    outerRadius={65}
-                    paddingAngle={4}
-                  >
-                    {categoryExpenses.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
-                      borderColor: isDark ? '#334155' : '#E2E8F0',
-                      borderRadius: '0.5rem',
-                      fontSize: '11px',
-                      color: isDark ? '#FFFFFF' : '#0F172A',
-                    }}
-                    formatter={(val: any) => [formatINR(val), '']}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-
-            <div className="space-y-2 mt-2">
-              {categoryExpenses.map((cat) => (
-                <div key={cat.name} className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: cat.color }} />
-                    <span className="text-slate-600 dark:text-slate-300">{cat.name}</span>
-                  </div>
-                  <span className="font-bold text-slate-900 dark:text-white">{formatINR(cat.value)}</span>
+            {categoryExpenses.length > 0 ? (
+              <>
+                <div className="h-44 w-full mt-3">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={categoryExpenses}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={45}
+                        outerRadius={65}
+                        paddingAngle={4}
+                      >
+                        {categoryExpenses.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
+                          borderColor: isDark ? '#334155' : '#E2E8F0',
+                          borderRadius: '0.5rem',
+                          fontSize: '11px',
+                          color: isDark ? '#FFFFFF' : '#0F172A',
+                        }}
+                        formatter={(val: any) => [formatINR(val), '']}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
                 </div>
-              ))}
-            </div>
+
+                <div className="space-y-2 mt-2 max-h-48 overflow-y-auto">
+                  {categoryExpenses.map((cat) => (
+                    <div key={cat.name} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                        <span className="text-slate-600 dark:text-slate-300 truncate">{cat.name}</span>
+                      </div>
+                      <span className="font-bold text-slate-900 dark:text-white shrink-0 ml-2">{formatINR(cat.value)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="py-12 flex flex-col items-center justify-center text-center space-y-2.5 text-slate-400">
+                <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500">
+                  <PieChartIcon className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">No expenses recorded yet</p>
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500 max-w-[200px] mt-0.5">
+                    Operational expenses logged in the Finance hub will appear here automatically.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
