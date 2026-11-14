@@ -76,7 +76,7 @@ export async function getDuePaymentsGrouped(req: Request, res: Response): Promis
     const dueThisWeek: typeof unpaid = [];
     const upcoming: typeof unpaid = [];
 
-    unpaid.forEach((p) => {
+    unpaid.forEach((p: any) => {
       if (!p.dueDate) {
         upcoming.push(p);
         return;
@@ -147,7 +147,11 @@ export async function createPayment(req: Request, res: Response): Promise<void> 
         label,
         amount: numAmount,
         dueDate: dueDate ? new Date(dueDate) : null,
-        receivedDate: receivedDate ? new Date(receivedDate) : null,
+        receivedDate: receivedDate
+          ? new Date(receivedDate)
+          : status === 'PAID' || status === 'ADVANCE'
+          ? new Date()
+          : null,
         status: status || 'DUE',
         method: method || null,
         notes: notes || null,
@@ -196,7 +200,7 @@ export async function updatePayment(req: Request, res: Response): Promise<void> 
     if (receivedDate !== undefined) data.receivedDate = receivedDate ? new Date(receivedDate) : null;
     if (status !== undefined) {
       data.status = status;
-      if (status === 'PAID' && !receivedDate) {
+      if ((status === 'PAID' || status === 'ADVANCE') && !receivedDate) {
         data.receivedDate = new Date();
       }
     }

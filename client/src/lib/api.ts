@@ -202,23 +202,31 @@ export const api = {
   },
 
   async createPayment(data: Partial<Payment>): Promise<Payment> {
-    return request<Payment>('/payments', {
+    const res = await request<Payment>('/payments', {
       method: 'POST',
       body: JSON.stringify(data),
     });
+    window.dispatchEvent(new CustomEvent('infynux_payment_updated', { detail: res }));
+    window.dispatchEvent(new CustomEvent('infynux_data_changed'));
+    return res;
   },
 
   async updatePayment(id: string, data: Partial<Payment>): Promise<Payment> {
-    return request<Payment>(`/payments/${id}`, {
+    const res = await request<Payment>(`/payments/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
+    window.dispatchEvent(new CustomEvent('infynux_payment_updated', { detail: res }));
+    window.dispatchEvent(new CustomEvent('infynux_data_changed'));
+    return res;
   },
 
   async deletePayment(id: string): Promise<void> {
-    return request<void>(`/payments/${id}`, {
+    await request<void>(`/payments/${id}`, {
       method: 'DELETE',
     });
+    window.dispatchEvent(new CustomEvent('infynux_payment_updated', { detail: { id } }));
+    window.dispatchEvent(new CustomEvent('infynux_data_changed'));
   },
 
   // --- LEADS ---

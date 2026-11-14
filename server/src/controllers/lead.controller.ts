@@ -199,7 +199,7 @@ export async function convertLeadToClient(req: Request, res: Response): Promise<
     const { initialProjectName, totalValue, projectType } = req.body;
 
     // Use Prisma transaction to ensure atomic lead conversion
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: any) => {
       const lead = await tx.lead.findUnique({ where: { id } });
       if (!lead) {
         throw new Error('Lead not found.');

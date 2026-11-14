@@ -40,7 +40,7 @@ export async function getProjects(req: Request, res: Response): Promise<void> {
       orderBy: { createdAt: 'desc' },
     });
 
-    const enriched = projects.map((p) => {
+    const enriched = projects.map((p: any) => {
       const amountPaid = calculateProjectPaid(p.payments as any);
       const amountDue = calculateProjectDue(p.totalValue, p.payments as any);
 

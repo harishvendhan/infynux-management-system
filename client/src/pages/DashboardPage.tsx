@@ -15,6 +15,8 @@ import {
   CheckCircle2,
   ChevronRight,
   ArrowUp,
+  RefreshCw,
+  Check,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -84,40 +86,86 @@ export const DashboardPage: React.FC = () => {
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [chartData, setChartData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+
+  const load = async (showSpinner = false) => {
+    if (showSpinner) setIsLoading(true);
+    else setIsRefreshing(true);
+    try {
+      const [summary, chart] = await Promise.all([
+        api.getDashboardSummary(),
+        api.getRevenueChart(),
+      ]);
+      setData(summary);
+      setChartData(chart);
+    } catch (err) {
+      console.error('Failed to load dashboard data:', err);
+      // Default safe empty state if server/network fails
+      setData((prev) => prev || {
+        kpis: {
+          revenueThisMonth: 0,
+          pendingAmount: 0,
+          expensesThisMonth: 0,
+          salariesPaidThisMonth: 0,
+          netProfit: 0,
+          activeClientsCount: 0,
+          activeProjectsCount: 0,
+        },
+        todaysTasks: [],
+        upcomingPayments: [],
+        recentActivity: [],
+      });
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  };
 
   useEffect(() => {
-    async function load() {
-      setIsLoading(true);
-      try {
-        const [summary, chart] = await Promise.all([
-          api.getDashboardSummary(),
-          api.getRevenueChart(),
-        ]);
-        setData(summary);
-        setChartData(chart);
-      } catch (err) {
-        console.error('Failed to load dashboard data:', err);
-        // Default safe empty state if server/network fails
-        setData({
-          kpis: {
-            revenueThisMonth: 0,
-            pendingAmount: 0,
-            expensesThisMonth: 0,
-            salariesPaidThisMonth: 0,
-            netProfit: 0,
-            activeClientsCount: 0,
-            activeProjectsCount: 0,
-          },
-          todaysTasks: [],
-          upcomingPayments: [],
-          recentActivity: [],
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    load();
+    load(true);
+
+    // Event listeners for live updates from Payments, Projects, Expenses
+    const handleLiveUpdate = () => {
+      load(false);
+    };
+
+    window.addEventListener('infynux_payment_updated', handleLiveUpdate);
+    window.addEventListener('infynux_data_changed', handleLiveUpdate);
+
+    // Visibility and focus sync
+    const handleFocus = () => {
+      load(false);
+    };
+    window.addEventListener('focus', handleFocus);
+
+    // Periodic live polling every 4 seconds
+    const interval = setInterval(() => {
+      load(false);
+    }, 4000);
+
+    return () => {
+      window.removeEventListener('infynux_payment_updated', handleLiveUpdate);
+      window.removeEventListener('infynux_data_changed', handleLiveUpdate);
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(interval);
+    };
   }, []);
+
+  const handleMarkPaymentPaid = async (paymentId: string) => {
+    setActionLoadingId(paymentId);
+    try {
+      await api.updatePayment(paymentId, {
+        status: 'PAID',
+        receivedDate: new Date().toISOString(),
+      });
+      await load(false);
+    } catch (err) {
+      console.error('Failed to mark payment as paid', err);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
 
   if (isLoading || !data) {
     return (
@@ -135,11 +183,27 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-8">
-      {/* Page Title */}
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white anim-fade-in-up delay-2">
-          Dashboard
-        </h2>
+      {/* Page Title & Live Sync Controls */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white anim-fade-in-up delay-2">
+            Dashboard
+          </h2>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40 text-[11px] font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Live Sync</span>
+          </div>
+          <button
+            onClick={() => load(false)}
+            disabled={isRefreshing}
+            className="p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
+            title="Refresh dashboard metrics"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-indigo-600' : ''}`} />
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards (4 Cards Grid) */}
@@ -468,9 +532,20 @@ export const DashboardPage: React.FC = () => {
                         {pay.project?.client?.name || pay.project?.name} • Due {formatDate(pay.dueDate)}
                       </p>
                     </div>
-                    <span className="text-xs font-bold text-amber-700 dark:text-amber-400 shrink-0 bg-amber-50 dark:bg-amber-950/40 px-2 py-1 rounded-md border border-amber-200 dark:border-amber-800/40">
-                      {formatINR(pay.amount)}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-xs font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-1 rounded-md border border-amber-200 dark:border-amber-800/40">
+                        {formatINR(pay.amount)}
+                      </span>
+                      <button
+                        onClick={() => handleMarkPaymentPaid(pay.id)}
+                        disabled={actionLoadingId === pay.id}
+                        className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-semibold transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                        title="Mark payment as received"
+                      >
+                        <Check className="w-3 h-3" />
+                        <span>{actionLoadingId === pay.id ? '...' : 'Mark Paid'}</span>
+                      </button>
+                    </div>
                   </div>
                 ))
               )}

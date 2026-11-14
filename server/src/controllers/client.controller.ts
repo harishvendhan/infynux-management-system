@@ -38,7 +38,7 @@ export async function getClients(req: Request, res: Response): Promise<void> {
       orderBy: { createdAt: 'desc' },
     });
 
-    const enrichedClients = clients.map((client) => {
+    const enrichedClients = clients.map((client: any) => {
       const totalBusiness = calculateClientTotalBusiness(client.projects as any);
       let totalPaid = 0;
       client.projects.forEach((proj: any) => {

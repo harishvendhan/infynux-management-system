@@ -334,17 +334,17 @@ export async function getFinancialReports(req: Request, res: Response): Promise<
         receivedDate: { gte: startOfMonth, lte: endOfMonth },
       },
     });
-    const monthlyIncome = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+    const monthlyIncome = payments.reduce((sum: number, p: any) => sum + Number(p.amount), 0);
 
     // Expenses this month
     const expenses = await prisma.expense.findMany({
       where: { date: { gte: startOfMonth, lte: endOfMonth } },
     });
-    const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
+    const totalExpenses = expenses.reduce((sum: number, e: any) => sum + Number(e.amount), 0);
 
     // Category breakdown
     const categoryMap: Record<string, number> = {};
-    expenses.forEach((e) => {
+    expenses.forEach((e: any) => {
       categoryMap[e.category] = (categoryMap[e.category] || 0) + Number(e.amount);
     });
     const categoryBreakdown = Object.entries(categoryMap).map(([category, amount]) => ({
@@ -356,7 +356,7 @@ export async function getFinancialReports(req: Request, res: Response): Promise<
     const salaries = await prisma.salary.findMany({
       where: { month: ymString, status: 'PAID' },
     });
-    const totalSalaries = salaries.reduce((sum, s) => sum + Number(s.finalAmount), 0);
+    const totalSalaries = salaries.reduce((sum: number, s: any) => sum + Number(s.finalAmount), 0);
 
     const netProfit = calculateMonthlyNet(monthlyIncome, totalExpenses, totalSalaries);
 
