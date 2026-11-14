@@ -103,8 +103,13 @@ export async function syncLocalDraftsToSupabase(): Promise<void> {
 
 export const api = {
   // --- DASHBOARD ---
-  async getDashboardSummary(): Promise<DashboardSummary> {
-    return request<DashboardSummary>('/dashboard/summary');
+  async getDashboardSummary(period?: string, month?: number, year?: number): Promise<DashboardSummary> {
+    const params = new URLSearchParams();
+    if (period) params.append('period', period);
+    if (month !== undefined) params.append('month', String(month));
+    if (year !== undefined) params.append('year', String(year));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return request<DashboardSummary>(`/dashboard/summary${qs}`);
   },
 
   async getRevenueChart(): Promise<Array<{ month: string; revenue: number; expenses: number }>> {

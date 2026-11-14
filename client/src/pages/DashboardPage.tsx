@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { api } from '../lib/api';
 import { DashboardSummary } from '../types';
 import { formatINR, formatDate, formatTime } from '../lib/formatters';
@@ -88,13 +88,43 @@ export const DashboardPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [selectedPeriod, setSelectedPeriod] = useState<'all' | 'current' | 'october' | 'september'>('all');
 
-  const load = async (showSpinner = false) => {
+  const periodLabel = useMemo(() => {
+    switch (selectedPeriod) {
+      case 'all':
+        return 'All-Time';
+      case 'october':
+        return 'October 2026';
+      case 'september':
+        return 'September 2026';
+      case 'current':
+      default:
+        return new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    }
+  }, [selectedPeriod]);
+
+  const load = async (showSpinner = false, periodOverride?: 'all' | 'current' | 'october' | 'september') => {
+    const periodToUse = periodOverride || selectedPeriod;
     if (showSpinner) setIsLoading(true);
     else setIsRefreshing(true);
     try {
+      let periodArg: string | undefined = undefined;
+      let monthArg: number | undefined = undefined;
+      let yearArg: number | undefined = undefined;
+
+      if (periodToUse === 'all') {
+        periodArg = 'all';
+      } else if (periodToUse === 'october') {
+        monthArg = 9;
+        yearArg = 2026;
+      } else if (periodToUse === 'september') {
+        monthArg = 8;
+        yearArg = 2026;
+      }
+
       const [summary, chart] = await Promise.all([
-        api.getDashboardSummary(),
+        api.getDashboardSummary(periodArg, monthArg, yearArg),
         api.getRevenueChart(),
       ]);
       setData(summary);
@@ -105,6 +135,7 @@ export const DashboardPage: React.FC = () => {
       setData((prev) => prev || {
         kpis: {
           revenueThisMonth: 0,
+          totalRevenueAllTime: 0,
           pendingAmount: 0,
           expensesThisMonth: 0,
           salariesPaidThisMonth: 0,
@@ -121,6 +152,10 @@ export const DashboardPage: React.FC = () => {
       setIsRefreshing(false);
     }
   };
+
+  useEffect(() => {
+    load(false);
+  }, [selectedPeriod]);
 
   useEffect(() => {
     load(true);
@@ -184,13 +219,57 @@ export const DashboardPage: React.FC = () => {
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-8">
       {/* Page Title & Live Sync Controls */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white anim-fade-in-up delay-2">
             Dashboard
           </h2>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Period Selector Tabs */}
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700/60 text-xs">
+            <button
+              onClick={() => setSelectedPeriod('all')}
+              className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer ${
+                selectedPeriod === 'all'
+                  ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              All Time
+            </button>
+            <button
+              onClick={() => setSelectedPeriod('current')}
+              className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer ${
+                selectedPeriod === 'current'
+                  ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              This Month
+            </button>
+            <button
+              onClick={() => setSelectedPeriod('october')}
+              className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer ${
+                selectedPeriod === 'october'
+                  ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Oct 2026
+            </button>
+            <button
+              onClick={() => setSelectedPeriod('september')}
+              className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer ${
+                selectedPeriod === 'september'
+                  ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Sep 2026
+            </button>
+          </div>
+
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40 text-[11px] font-semibold">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             <span>Live Sync</span>
@@ -213,7 +292,7 @@ export const DashboardPage: React.FC = () => {
           <div className="flex justify-between items-start mb-4">
             <div>
               <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
-                Revenue (Month)
+                {selectedPeriod === 'all' ? 'Revenue (All-Time)' : `Revenue (${periodLabel})`}
               </p>
               <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
                 <AnimatedCounter value={kpis.revenueThisMonth} prefix="₹" />
@@ -223,14 +302,14 @@ export const DashboardPage: React.FC = () => {
               <TrendingUp className="w-5 h-5" />
             </div>
           </div>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 h-10">
-            Collected payments in {currentMonth}
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-2 min-h-10">
+            {selectedPeriod === 'all'
+              ? 'Total cleared payments across all client projects'
+              : `Cleared payments in ${periodLabel}`}
           </p>
-          <div className="flex items-center gap-2 text-sm">
-            <span className="inline-flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-md font-medium text-xs">
-              <ArrowUp className="w-3.5 h-3.5" /> 18%
-            </span>
-            <span className="text-slate-400 text-xs">vs last month</span>
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <span>All-Time: {formatINR(kpis.totalRevenueAllTime ?? kpis.revenueThisMonth)}</span>
+            <span className="text-emerald-600 dark:text-emerald-400 font-medium">Cleared</span>
           </div>
         </div>
 
@@ -249,10 +328,13 @@ export const DashboardPage: React.FC = () => {
               <AlertCircle className="w-5 h-5" />
             </div>
           </div>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 h-10">
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-2 min-h-10">
             Uncollected project receivables
           </p>
-          <div className="h-6" />
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <span>{kpis.activeProjectsCount} Active Projects</span>
+            <span className="text-amber-600 dark:text-amber-400 font-medium">Receivables</span>
+          </div>
         </div>
 
         {/* Card 3: Expenses */}
@@ -260,7 +342,7 @@ export const DashboardPage: React.FC = () => {
           <div className="flex justify-between items-start mb-4">
             <div>
               <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
-                Expenses (Month)
+                {selectedPeriod === 'all' ? 'Expenses (All-Time)' : `Expenses (${periodLabel})`}
               </p>
               <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
                 <AnimatedCounter value={kpis.expensesThisMonth} prefix="₹" />
@@ -270,10 +352,13 @@ export const DashboardPage: React.FC = () => {
               <Receipt className="w-5 h-5" />
             </div>
           </div>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 h-10">
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-2 min-h-10">
             Operational & tooling expenses
           </p>
-          <div className="h-6" />
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <span>Category breakdown</span>
+            <span className="text-rose-500 font-medium">Expenses</span>
+          </div>
         </div>
 
         {/* Card 4: Net Profit */}
@@ -281,7 +366,7 @@ export const DashboardPage: React.FC = () => {
           <div className="flex justify-between items-start mb-4">
             <div>
               <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
-                Net Profit
+                {selectedPeriod === 'all' ? 'Net Profit (All-Time)' : `Net Profit (${periodLabel})`}
               </p>
               <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
                 <AnimatedCounter value={kpis.netProfit} prefix="₹" />
@@ -291,14 +376,14 @@ export const DashboardPage: React.FC = () => {
               <Scale className="w-5 h-5" />
             </div>
           </div>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 h-10">
-            Revenue - Expenses - Salaries
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-2 min-h-10">
+            Revenue − Expenses − Salaries
           </p>
-          <div className="flex items-center gap-2 text-sm">
-            <span className="inline-flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-md font-medium text-xs">
-              <ArrowUp className="w-3.5 h-3.5" /> 24%
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <span>Net Operating Margin</span>
+            <span className={kpis.netProfit >= 0 ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-rose-600 dark:text-rose-400 font-medium"}>
+              {kpis.netProfit >= 0 ? "Profitable" : "Deficit"}
             </span>
-            <span className="text-slate-400 text-xs">vs last month</span>
           </div>
         </div>
       </div>

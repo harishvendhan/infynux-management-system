@@ -12,10 +12,15 @@ export async function getDashboardSummary(req: Request, res: Response): Promise<
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
-    const startOfMonth = new Date(currentYear, currentMonth, 1);
-    const endOfMonth = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999);
 
-    // 1. Month Revenue: sum of payments with status PAID or ADVANCE received inside this month
+    const targetPeriod = (req.query.period as string) || 'month';
+    const reqMonth = req.query.month !== undefined ? parseInt(req.query.month as string, 10) : currentMonth;
+    const reqYear = req.query.year !== undefined ? parseInt(req.query.year as string, 10) : currentYear;
+
+    const startOfMonth = new Date(reqYear, reqMonth, 1);
+    const endOfMonth = new Date(reqYear, reqMonth + 1, 0, 23, 59, 59, 999);
+
+    // 1. Month Revenue: sum of payments with status PAID or ADVANCE
     const allPaidPayments = await prisma.payment.findMany({
       where: {
         deletedAt: null,
@@ -23,42 +28,68 @@ export async function getDashboardSummary(req: Request, res: Response): Promise<
       },
     });
 
-    const revenueThisMonth = allPaidPayments
-      .filter((p: any) => {
-        const dateVal = p.receivedDate || p.updatedAt || p.createdAt;
-        if (!dateVal) return false;
-        const d = new Date(dateVal);
-        return d >= startOfMonth && d <= endOfMonth;
-      })
-      .reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+    const totalRevenueAllTime = allPaidPayments.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
 
-    // 2. Pending dues: sum of unpaid amounts (DUE + OVERDUE + PARTIAL) across all active projects
+    const revenueThisMonth = targetPeriod === 'all'
+      ? totalRevenueAllTime
+      : allPaidPayments
+          .filter((p: any) => {
+            const dateVal = p.receivedDate || p.updatedAt || p.createdAt;
+            if (!dateVal) return false;
+            const d = new Date(dateVal);
+            return d >= startOfMonth && d <= endOfMonth;
+          })
+          .reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+
+    // 2. Pending dues: calculated across all active projects (Project Total Value - Paid) OR explicit unpaid milestone payments
+    const activeProjects = await prisma.project.findMany({
+      where: {
+        status: { in: ['PLANNING', 'IN_PROGRESS', 'WAITING_FOR_CLIENT'] },
+      },
+      include: {
+        payments: {
+          where: { deletedAt: null },
+        },
+      },
+    });
+
+    let totalProjectReceivables = 0;
+    activeProjects.forEach((proj: any) => {
+      const projTotal = Number(proj.totalValue || 0);
+      const projPaid = (proj.payments || [])
+        .filter((p: any) => !p.deletedAt && (p.status === 'PAID' || p.status === 'ADVANCE'))
+        .reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+      totalProjectReceivables += Math.max(0, projTotal - projPaid);
+    });
+
     const unpaidPayments = await prisma.payment.findMany({
       where: {
         deletedAt: null,
         status: { in: ['DUE', 'OVERDUE', 'PARTIAL'] },
       },
     });
-    const pendingAmount = unpaidPayments.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+    const explicitPending = unpaidPayments.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+    const pendingAmount = Math.max(totalProjectReceivables, explicitPending);
 
-    // 3. Expenses this month
+    // 3. Expenses
     const allExpenses = await prisma.expense.findMany({});
-    const expensesThisMonth = allExpenses
-      .filter((e: any) => {
-        const d = new Date(e.date);
-        return d >= startOfMonth && d <= endOfMonth;
-      })
-      .reduce((sum: number, e: any) => sum + Number(e.amount || 0), 0);
+    const totalExpensesAllTime = allExpenses.reduce((sum: number, e: any) => sum + Number(e.amount || 0), 0);
 
-    // 4. Salaries paid this month
-    const ymString = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
-    const salariesThisMonth = await prisma.salary.findMany({
-      where: {
-        month: ymString,
-        status: 'PAID',
-      },
+    const expensesThisMonth = targetPeriod === 'all'
+      ? totalExpensesAllTime
+      : allExpenses
+          .filter((e: any) => {
+            const d = new Date(e.date);
+            return d >= startOfMonth && d <= endOfMonth;
+          })
+          .reduce((sum: number, e: any) => sum + Number(e.amount || 0), 0);
+
+    // 4. Salaries
+    const ymString = `${reqYear}-${String(reqMonth + 1).padStart(2, '0')}`;
+    const salariesThisMonthRecords = await prisma.salary.findMany({
+      where: targetPeriod === 'all' ? { status: 'PAID' } : { month: ymString, status: 'PAID' },
     });
-    const salariesPaidThisMonth = salariesThisMonth.reduce((sum: number, s: any) => sum + Number(s.finalAmount || 0), 0);
+    const salariesPaidThisMonth = salariesThisMonthRecords.reduce((sum: number, s: any) => sum + Number(s.finalAmount || 0), 0);
 
     // 5. Net Profit
     const netProfit = calculateMonthlyNet(revenueThisMonth, expensesThisMonth, salariesPaidThisMonth);
@@ -123,6 +154,7 @@ export async function getDashboardSummary(req: Request, res: Response): Promise<
       data: {
         kpis: {
           revenueThisMonth,
+          totalRevenueAllTime,
           pendingAmount,
           expensesThisMonth,
           salariesPaidThisMonth,
@@ -142,6 +174,7 @@ export async function getDashboardSummary(req: Request, res: Response): Promise<
       data: {
         kpis: {
           revenueThisMonth: 0,
+          totalRevenueAllTime: 0,
           revenueGrowthMoM: 0,
           activeProjectsCount: 0,
           activeClientsCount: 0,

@@ -209,6 +209,7 @@ export interface ActivityLog {
 export interface DashboardSummary {
   kpis: {
     revenueThisMonth: number;
+    totalRevenueAllTime?: number;
     pendingAmount: number;
     expensesThisMonth: number;
     salariesPaidThisMonth: number;
